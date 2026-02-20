@@ -1,0 +1,36 @@
+# Compiled class files
+*.class
+target/
+*.jar
+*.war
+*.ear
+
+# Log files
+*.log
+logs/
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Spring Boot
+application-local.yml
+application-secret.yml
+
+# Maven
+.mvn/
+mvnw
+mvnw.cmd
+
+# Sensitive data
+*.pem
+*.key
+secrets/

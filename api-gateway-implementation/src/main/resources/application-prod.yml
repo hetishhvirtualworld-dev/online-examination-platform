@@ -1,0 +1,42 @@
+# Production Environment Configuration
+spring:
+  cloud:
+    gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowed-origins: 
+              - "https://examplatform.com"
+              - "https://www.examplatform.com"
+
+# Service URLs (Kubernetes DNS)
+# These resolve to Kubernetes Service objects
+AUTH_SERVICE_URL: http://auth-service:8080
+USER_SERVICE_URL: http://user-service:8080
+EXAM_SERVICE_URL: http://exam-service:8080
+EVALUATION_SERVICE_URL: http://evaluation-service:8080
+RESULT_SERVICE_URL: http://result-service:8080
+NOTIFICATION_SERVICE_URL: http://notification-service:8080
+
+# Redis (Kubernetes Service)
+REDIS_HOST: redis-service
+REDIS_PORT: 6379
+REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+# JWT Configuration (Production)
+JWT_ISSUER: https://examplatform.com
+
+# Logging (Production - Less verbose)
+logging:
+  level:
+    root: INFO
+    com.examplatform.gateway: INFO
+    org.springframework.cloud.gateway: WARN
+    org.springframework.security: WARN
+
+# Management (Restrict exposed endpoints)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus

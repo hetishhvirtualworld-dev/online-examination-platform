@@ -1,0 +1,35 @@
+# Development Environment Configuration
+spring:
+  cloud:
+    gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowed-origins: 
+              - "http://localhost:3000"
+              - "http://localhost:4200"
+              - "http://localhost:8080"
+
+# Service URLs (Local Development)
+AUTH_SERVICE_URL: http://localhost:8081
+USER_SERVICE_URL: http://localhost:8082
+EXAM_SERVICE_URL: http://localhost:8083
+EVALUATION_SERVICE_URL: http://localhost:8084
+RESULT_SERVICE_URL: http://localhost:8085
+NOTIFICATION_SERVICE_URL: http://localhost:8086
+
+# Redis (Local)
+REDIS_HOST: localhost
+REDIS_PORT: 6379
+REDIS_PASSWORD: ""
+
+# JWT Configuration (Development)
+JWT_ISSUER: http://localhost:8081
+
+# Logging (More verbose in dev)
+logging:
+  level:
+    com.examplatform.gateway: DEBUG
+    org.springframework.cloud.gateway: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.web: DEBUG

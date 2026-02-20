@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  # Redis for Rate Limiting
+  redis:
+    image: redis:7-alpine
+    container_name: api-gateway-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - exam-platform-network
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # Mock service URLs for local testing
+      - AUTH_SERVICE_URL=http://mock-auth-service:8081
+      - USER_SERVICE_URL=http://mock-user-service:8082
+      - EXAM_SERVICE_URL=http://mock-exam-service:8083
+      - EVALUATION_SERVICE_URL=http://mock-evaluation-service:8084
+      - RESULT_SERVICE_URL=http://mock-result-service:8085
+      - NOTIFICATION_SERVICE_URL=http://mock-notification-service:8086
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 40s
+    networks:
+      - exam-platform-network
+
+volumes:
+  redis-data:
+
+networks:
+  exam-platform-network:
+    driver: bridge

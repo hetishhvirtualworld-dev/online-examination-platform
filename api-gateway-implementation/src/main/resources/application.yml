@@ -1,0 +1,188 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+
+  # Cloud Gateway Configuration
+  cloud:
+    gateway:
+      # Global CORS Configuration
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowed-origins: 
+              - "http://localhost:3000"
+              - "http://localhost:4200"
+            allowed-methods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - PATCH
+              - OPTIONS
+            allowed-headers: "*"
+            allow-credentials: true
+            max-age: 3600
+
+      # Route Definitions
+      routes:
+        # Auth Service Routes (Public - No JWT required)
+        - id: auth-login
+          uri: ${AUTH_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/auth/login
+            - Method=POST
+          filters:
+            - StripPrefix=1
+
+        - id: auth-register
+          uri: ${AUTH_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/auth/register
+            - Method=POST
+          filters:
+            - StripPrefix=1
+
+        - id: auth-refresh
+          uri: ${AUTH_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/auth/refresh
+            - Method=POST
+          filters:
+            - StripPrefix=1
+
+        # User Service Routes (Protected - JWT required)
+        - id: user-service
+          uri: ${USER_SERVICE_URL:http://localhost:8082}
+          predicates:
+            - Path=/api/users/**
+          filters:
+            - StripPrefix=1
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 10
+                redis-rate-limiter.burstCapacity: 20
+                redis-rate-limiter.requestedTokens: 1
+
+        # Exam Service Routes (Protected - JWT required)
+        - id: exam-service
+          uri: ${EXAM_SERVICE_URL:http://localhost:8083}
+          predicates:
+            - Path=/api/exams/**
+          filters:
+            - StripPrefix=1
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 20
+                redis-rate-limiter.burstCapacity: 40
+                redis-rate-limiter.requestedTokens: 1
+
+        # Evaluation Service Routes (Protected - JWT required)
+        - id: evaluation-service
+          uri: ${EVALUATION_SERVICE_URL:http://localhost:8084}
+          predicates:
+            - Path=/api/evaluations/**
+          filters:
+            - StripPrefix=1
+
+        # Result Service Routes (Protected - JWT required)
+        - id: result-service
+          uri: ${RESULT_SERVICE_URL:http://localhost:8085}
+          predicates:
+            - Path=/api/results/**
+          filters:
+            - StripPrefix=1
+
+        # Notification Service Routes (Protected - JWT required)
+        - id: notification-service
+          uri: ${NOTIFICATION_SERVICE_URL:http://localhost:8086}
+          predicates:
+            - Path=/api/notifications/**
+          filters:
+            - StripPrefix=1
+
+      # Default Filters (Applied to all routes)
+      default-filters:
+        - name: Retry
+          args:
+            retries: 3
+            statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE
+            methods: GET
+            backoff:
+              firstBackoff: 50ms
+              maxBackoff: 500ms
+              factor: 2
+              basedOnPreviousValue: false
+
+  # Redis Configuration (for Rate Limiting)
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+
+  # Security Configuration for JWT
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Public key endpoint from Auth Service
+          jwk-set-uri: ${AUTH_SERVICE_URL:http://localhost:8081}/auth/.well-known/jwks.json
+          # Or use public key directly
+          # public-key-location: classpath:public-key.pem
+          issuer-uri: ${JWT_ISSUER:http://localhost:8081}
+
+# Management & Observability
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics,gateway
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+    gateway:
+      enabled: true
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+  tracing:
+    sampling:
+      probability: 1.0
+
+# Logging Configuration
+logging:
+  level:
+    root: INFO
+    com.examplatform.gateway: DEBUG
+    org.springframework.cloud.gateway: DEBUG
+    org.springframework.security: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{traceId}/%X{spanId}] [%X{correlationId}] %logger{36} - %msg%n"
+
+# Application Info (for Actuator)
+info:
+  app:
+    name: API Gateway
+    description: Production-ready API Gateway for Online Examination Platform
+    version: 1.0.0
+    environment: ${SPRING_PROFILES_ACTIVE:default}
