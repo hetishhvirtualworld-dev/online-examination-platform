@@ -1,0 +1,78 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: auth-service
+
+  # MYSQL — audit log only
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/auth_db}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
+    hikari:
+      minimum-idle: 2
+      maximum-pool-size: 10
+      connection-timeout: 3000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+
+  # Redis — refresh tokens, rate limiting, access token blocklist
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          min-idle: 2
+          max-idle: 8
+          max-active: 16
+
+  # Flyway — schema migrations
+#  flyway:
+#    enabled: true
+#    locations: classpath:db/migration
+
+# JWT — same secret as API Gateway (they share the same signing key)
+jwt:
+  secret: ${JWT_SECRET:my-super-secret-key-my-super-secret-key}                       # REQUIRED — injected from Kubernetes Secret
+  access-token-expiry-ms: ${JWT_ACCESS_EXPIRY_MS:900000}       # 15 minutes
+  refresh-token-expiry-ms: ${JWT_REFRESH_EXPIRY_MS:604800000}  # 7 days
+
+# Downstream services
+services:
+  user-service:
+    url: ${USER_SERVICE_URL:http://user-service:8082}
+
+# Auth configuration
+auth:
+  rate-limit:
+    max-attempts: ${RATE_LIMIT_MAX:5}
+    window-seconds: ${RATE_LIMIT_WINDOW:900}   # 15-minute window
+
+# Actuator — Kubernetes liveness/readiness probes
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+
+logging:
+  level:
+    com.examplatform.auth: INFO
+    org.springframework.security: WARN
+
+eureka:
+   client:
+      service-url:
+         defaultZone: http://localhost:8761/eureka
