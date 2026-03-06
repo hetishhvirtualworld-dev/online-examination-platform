@@ -6,7 +6,7 @@ import org.springframework.web.bind.annotation.*;
 
 @FeignClient(
         name = "user-service",
-        url = "${user.service.base-url}"
+        url = "${services.user-service.url}"
 )
 public interface UserServiceFeignClient {
 

@@ -3,6 +3,7 @@ package com.examplatform.auth.service;
 import com.examplatform.auth.client.UserServiceClientWebClient;
 import com.examplatform.auth.dto.*;
 import com.examplatform.auth.entity.User;
+import com.examplatform.auth.events.UserRegisteredEvent;
 import com.examplatform.auth.repository.UserRepository;
 import com.examplatform.auth.security.JwtUtil;
 import com.examplatform.auth.security.TokenStore;
@@ -14,6 +15,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -43,6 +45,7 @@ public class AuthService {
     private final UserServiceClientWebClient	  userServiceClient;
     private final PasswordEncoder     passwordEncoder;
     private final AuditLogService     auditLogService;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
 
     @Value("${jwt.access-token-expiry-ms}")
     private long accessTokenExpiryMs;
@@ -207,18 +210,28 @@ public class AuthService {
         User user = User.builder().email(request.email).role(request.role).password(passwordEncoder.encode(request.getPassword())).build();
         userRepository.save(user);
 
-        // Delegate user creation to User Service
-        UserDto newUser = userServiceClient.register(
-                request.email,
-                request.firstName, request.lastName, request.role
-        );
+//        // Delegate user creation to User Service
+//        UserDto newUser = userServiceClient.register(
+//                request.email,
+//                request.firstName, request.lastName, request.role
+//        );
+        
+        UserRegisteredEvent event =
+                new UserRegisteredEvent(
+                		user.getId(),
+                		request.getFirstName() + " " + request.getLastName(),
+                		request.getEmail(),
+                		request.getRole()
+                );
+
+        kafkaTemplate.send("user-registered-topic", event);
 
         // Issue initial token pair (auto-login)
-        String accessToken  = jwtUtil.generateAccessToken(newUser.id, newUser.email, newUser.role);
+        String accessToken  = jwtUtil.generateAccessToken(user.getId().toString(), user.getEmail(), user.getRole());
         String refreshToken = jwtUtil.generateRefreshToken();
-        tokenStore.saveRefreshToken(refreshToken, newUser.id);
+        tokenStore.saveRefreshToken(refreshToken, user.getId().toString());
 
-        auditLogService.logSuccess(newUser.id, newUser.email, "REGISTER", ip);
+        auditLogService.logSuccess(user.getId().toString(), user.getEmail(), "REGISTER", ip);
 
         return TokenResponse.of(accessToken, refreshToken, accessTokenExpiryMs / 1000);
     }

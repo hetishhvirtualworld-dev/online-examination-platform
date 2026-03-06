@@ -20,6 +20,11 @@ management:
       exposure:
         include: health,info
 
+# Downstream services
+services:
+  user-service:
+    url: ${USER_SERVICE_URL:http://user-service:8082}
+
 eureka:
   client:
     service-url:
