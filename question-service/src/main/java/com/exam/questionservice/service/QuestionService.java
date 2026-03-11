@@ -7,7 +7,7 @@ import java.util.List;
 
 public interface QuestionService {
 
-    QuestionResponse createQuestion(Long facultyId, CreateQuestionRequest request);
+    QuestionResponse createQuestion(String facultyId, CreateQuestionRequest request);
 
     QuestionResponse getQuestionById(Long id);
 

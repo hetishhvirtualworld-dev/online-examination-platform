@@ -1,16 +1,18 @@
 package com.examplatform.gateway.filter;
 
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
 import org.springframework.http.server.reactive.ServerHttpRequest;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 
 /**
@@ -49,6 +51,7 @@ import reactor.core.publisher.Mono;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class JwtUserInfoFilter implements GlobalFilter, Ordered {
 
     private static final String HEADER_USER_ID = "X-User-Id";
@@ -56,41 +59,30 @@ public class JwtUserInfoFilter implements GlobalFilter, Ordered {
     private static final String HEADER_USER_ROLES = "X-User-Roles";
 
     @Override
-    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        return ReactiveSecurityContextHolder.getContext()
-            .map(SecurityContext::getAuthentication)
-            .filter(Authentication::isAuthenticated)
-            .flatMap(authentication -> {
-                if (authentication.getPrincipal() instanceof Jwt) {
-                    Jwt jwt = (Jwt) authentication.getPrincipal();
-                    
-                    // Extract user information from JWT claims
-                    String userId = jwt.getClaimAsString("sub");
-                    String email = jwt.getClaimAsString("email");
-                    String roles = jwt.getClaimAsString("roles");
-                    
-                    log.debug("Extracted user info from JWT: userId={}, email={}, roles={}", 
-                        userId, email, roles);
-                    
-                    // Add user info headers to request
-                    ServerHttpRequest mutatedRequest = exchange.getRequest().mutate()
-                        .header(HEADER_USER_ID, userId != null ? userId : "")
-                        .header(HEADER_USER_EMAIL, email != null ? email : "")
-                        .header(HEADER_USER_ROLES, roles != null ? roles : "")
-                        .build();
-                    
-                    ServerWebExchange mutatedExchange = exchange.mutate()
-                        .request(mutatedRequest)
-                        .build();
-                    
-                    return chain.filter(mutatedExchange);
-                }
-                
-                // No JWT found (public endpoints)
-                return chain.filter(exchange);
-            })
-            .switchIfEmpty(chain.filter(exchange)); // No authentication context
-    }
+	public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+    	
+    	return ReactiveSecurityContextHolder.getContext()
+                .map(SecurityContext::getAuthentication)
+                .cast(JwtAuthenticationToken.class)
+                .flatMap(auth -> {
+
+                    Jwt jwt = auth.getToken();
+
+        			String userId = jwt.getSubject();
+        			String email = jwt.getClaim("email");
+        			String roles = jwt.getClaim("roles");
+        			
+                    ServerHttpRequest mutatedRequest = exchange.getRequest().mutate().header(HEADER_USER_ID, userId)
+        					.header(HEADER_USER_EMAIL, email).header(HEADER_USER_ROLES, roles).build();
+
+                    return chain.filter(
+                            exchange.mutate()
+                                    .request(mutatedRequest)
+                                    .build()
+                    );
+                })
+                .switchIfEmpty(chain.filter(exchange));
+	}
 
     @Override
     public int getOrder() {

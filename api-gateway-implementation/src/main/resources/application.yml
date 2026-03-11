@@ -55,7 +55,7 @@ spring:
 
         # User Service Routes (Protected - JWT required)
         - id: user-service
-          uri: ${USER_SERVICE_URL:http://localhost:8082}
+          uri: ${USER_SERVICE_URL:http://localhost:8083}
           predicates:
             - Path=/api/users/**
           filters:
@@ -67,33 +67,34 @@ spring:
                 redis-rate-limiter.requestedTokens: 1
 
         # Exam Service Routes (Protected - JWT required)
-        - id: exam-service
-          uri: ${EXAM_SERVICE_URL:http://localhost:8083}
+        - id: question-service
+          uri: ${QUESTION_SERVICE_URL:http://localhost:8082}
           predicates:
-            - Path=/api/exams/**
+            - Path=/api/questions/**
           filters:
-            - StripPrefix=1
+            - RewritePath=/api/questions/?(?<segment>.*), /api/v1/questions${segment}
+#            - StripPrefix=1
             - name: RequestRateLimiter
               args:
                 redis-rate-limiter.replenishRate: 20
                 redis-rate-limiter.burstCapacity: 40
                 redis-rate-limiter.requestedTokens: 1
 
-        # Evaluation Service Routes (Protected - JWT required)
-        - id: evaluation-service
-          uri: ${EVALUATION_SERVICE_URL:http://localhost:8084}
-          predicates:
-            - Path=/api/evaluations/**
-          filters:
-            - StripPrefix=1
-
-        # Result Service Routes (Protected - JWT required)
-        - id: result-service
-          uri: ${RESULT_SERVICE_URL:http://localhost:8085}
-          predicates:
-            - Path=/api/results/**
-          filters:
-            - StripPrefix=1
+#        # Evaluation Service Routes (Protected - JWT required)
+#        - id: evaluation-service
+#          uri: ${EVALUATION_SERVICE_URL:http://localhost:8084}
+#          predicates:
+#            - Path=/api/evaluations/**
+#          filters:
+#            - StripPrefix=1
+#
+#        # Result Service Routes (Protected - JWT required)
+#        - id: result-service
+#          uri: ${RESULT_SERVICE_URL:http://localhost:8085}
+#          predicates:
+#            - Path=/api/results/**
+#          filters:
+#            - StripPrefix=1
 
         # Notification Service Routes (Protected - JWT required)
         - id: notification-service
@@ -129,16 +130,11 @@ spring:
           max-idle: 8
           min-idle: 0
 
-  # Security Configuration for JWT
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          # Public key endpoint from Auth Service
-          jwk-set-uri: ${AUTH_SERVICE_URL:http://localhost:8081}/auth/.well-known/jwks.json
-          # Or use public key directly
-          # public-key-location: classpath:public-key.pem
-          issuer-uri: ${JWT_ISSUER:http://localhost:8081}
+ # Security Configuration for JWT
+jwt:
+  secret: ${JWT_SECRET:my-super-secret-key-my-super-secret-key}     # REQUIRED — injected from Kubernetes Secret
+  access-token-expiry-ms: ${JWT_ACCESS_EXPIRY_MS:900000}       # 15 minutes
+  refresh-token-expiry-ms: ${JWT_REFRESH_EXPIRY_MS:604800000}  # 7 days
 
 # Management & Observability
 management:

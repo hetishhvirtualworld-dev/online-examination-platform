@@ -23,7 +23,8 @@ management:
 # Downstream services
 services:
   user-service:
-    url: ${USER_SERVICE_URL:http://user-service:8082}
+     url: ${USER_SERVICE_URL:http://localhost:8083}
+#    url: ${USER_SERVICE_URL:http://user-service:8083}
 
 eureka:
   client:

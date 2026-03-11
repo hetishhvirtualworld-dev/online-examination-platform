@@ -2,6 +2,7 @@ package com.examplatform.gateway.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.web.server.SecurityWebFilterChain;
@@ -54,15 +55,9 @@ public class SecurityConfig {
                 // All other endpoints require authentication
                 .anyExchange().authenticated()
             )
-            
-            // JWT validation
-            .oauth2ResourceServer(oauth2 -> oauth2
-                .jwt(jwt -> {
-                    // JWT configuration is in application.yml
-                    // spring.security.oauth2.resourceserver.jwt.jwk-set-uri
-                })
-            )
-            
+         // JWT validation happens here
+            .oauth2ResourceServer(oauth ->
+                    oauth.jwt(Customizer.withDefaults()))
             .build();
     }
 }

@@ -27,11 +27,11 @@ public class QuestionServiceImpl implements QuestionService {
     private final UserServiceFeignClient userClient;
 
     @Override
-    public QuestionResponse createQuestion(Long facultyId, CreateQuestionRequest request) {
+    public QuestionResponse createQuestion(String facultyId, CreateQuestionRequest request) {
         log.info("Creating new question for subject: {}", request.getSubject());
         
         // Validate faculty exists
-        UserClientResponse user = userClient.getUserById(facultyId);
+        UserClientResponse user = userClient.getUserById(Long.valueOf(facultyId));
 
         if (!"FACULTY".equals(user.getRole())) {
             throw new RuntimeException("Only faculty can create questions");
