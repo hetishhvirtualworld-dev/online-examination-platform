@@ -1,23 +1,119 @@
 version: '3.8'
 
 services:
-  # Redis for Rate Limiting
+
+  # ── Infrastructure ────────────────────────────────────────────────────────
+
   redis:
     image: redis:7-alpine
-    container_name: api-gateway-redis
+    container_name: exam-platform-redis
+    command: redis-server    # FIX #7: Redis auth enabled
     ports:
       - "6379:6379"
     volumes:
       - redis-data:/data
+    restart: unless-stopped                            # FIX #9: auto-restart on crash
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "ping"]
       interval: 10s
       timeout: 3s
       retries: 3
     networks:
       - exam-platform-network
 
-  # API Gateway
+  # ── Services ──────────────────────────────────────────────────────────────
+
+  auth-service:
+    build:
+      context: ../auth-service
+      dockerfile: Dockerfile
+    container_name: auth-service
+    ports:
+      - "8081:8081"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      # FIX: host.docker.internal reaches your Windows machine's MySQL
+      - DB_URL=jdbc:mysql://host.docker.internal:3306/auth_db
+      - DB_USERNAME=root
+      - DB_PASSWORD=root
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:9092
+      - JWT_SECRET=my-super-secret-key-for-prod-secret-key
+      - JWT_ACCESS_EXPIRY_MS=900000
+      - JWT_REFRESH_EXPIRY_MS=604800000
+      - USER_SERVICE_URL=http://user-service:8082
+      - RATE_LIMIT_MAX=5
+      - RATE_LIMIT_WINDOW=900
+    depends_on:
+      redis:
+        condition: service_healthy       # FIX #4: wait for Redis to be ready
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8081/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s                 # JVM needs time to start
+    networks:
+      - exam-platform-network
+
+  user-service:
+    build:
+      context: ../user-service
+      dockerfile: Dockerfile
+    container_name: user-service
+    ports:
+      - "8082:8082"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - DB_URL=jdbc:mysql://host.docker.internal:3306/user_db
+      - DB_USERNAME=root
+      - DB_PASSWORD=root
+      # FIX: host.docker.internal reaches your Windows machine's Kafka
+      - KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:9092
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8082/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - exam-platform-network
+
+  question-service:
+    build:
+      context: ../question-service
+      dockerfile: Dockerfile
+    container_name: question-service
+    ports:
+      - "8083:8083"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - DB_URL=jdbc:mysql://host.docker.internal:3306/question_db
+      - DB_USERNAME=root
+      - DB_PASSWORD=root
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - USER_SERVICE_URL=http://user-service:8082
+    depends_on:
+      redis:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8083/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - exam-platform-network
+
   api-gateway:
     build:
       context: .
@@ -26,29 +122,39 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - SPRING_PROFILES_ACTIVE=dev
+      - SPRING_PROFILES_ACTIVE=prod
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      # Mock service URLs for local testing
-      - AUTH_SERVICE_URL=http://mock-auth-service:8081
-      - USER_SERVICE_URL=http://mock-user-service:8082
-      - EXAM_SERVICE_URL=http://mock-exam-service:8083
-      - EVALUATION_SERVICE_URL=http://mock-evaluation-service:8084
-      - RESULT_SERVICE_URL=http://mock-result-service:8085
-      - NOTIFICATION_SERVICE_URL=http://mock-notification-service:8086
+      - REDIS_PASSWORD=
+      - JWT_SECRET=my-super-secret-key-for-prod-secret-key
+      - JWT_ACCESS_EXPIRY_MS=900000
+      - JWT_REFRESH_EXPIRY_MS=604800000
+      # FIX #1: question-service hostname and correct port
+      - AUTH_SERVICE_URL=http://auth-service:8081
+      - USER_SERVICE_URL=http://user-service:8082
+      - QUESTION_SERVICE_URL=http://question-service:8083
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+      question-service:
+        condition: service_healthy
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      # FIX #10: use curl instead of wget (wget may not exist in jre-alpine)
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"]
       interval: 30s
-      timeout: 3s
+      timeout: 5s
       retries: 3
-      start_period: 40s
+      start_period: 60s
     networks:
       - exam-platform-network
 
 volumes:
-  redis-data:
+  redis-data:       # FIX #8: mysql-data removed — MySQL runs on host, not Docker
 
 networks:
   exam-platform-network:

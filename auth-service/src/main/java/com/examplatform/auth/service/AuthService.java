@@ -225,7 +225,7 @@ public class AuthService {
                 );
 
         kafkaTemplate.send("user-registered-topic", event);
-
+        
         // Issue initial token pair (auto-login)
         String accessToken  = jwtUtil.generateAccessToken(user.getId().toString(), user.getEmail(), user.getRole());
         String refreshToken = jwtUtil.generateRefreshToken();

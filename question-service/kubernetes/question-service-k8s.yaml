@@ -1,0 +1,221 @@
+# Kubernetes manifest — Question Service
+# Consistent with auth-service.yaml conventions
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: question-service-secrets
+  namespace: exam-platform
+type: Opaque
+stringData:
+  # Replace ALL values with your secrets manager references (ESO / Sealed Secrets / SOPS)
+  # Do NOT commit real credentials here
+  DB_URL: "jdbc:mysql://mysql:3306/question_db"
+  DB_USERNAME: "${DB_USERNAME_FROM_VAULT}"       # Least-privilege user scoped to question_db only
+  DB_PASSWORD: "${DB_PASSWORD_FROM_VAULT}"       # Strong password — openssl rand -base64 16
+  REDIS_HOST: "redis-service"
+  REDIS_PASSWORD: "${REDIS_PASSWORD_FROM_VAULT}" # Redis must have requirepass enabled
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: question-service-config
+  namespace: exam-platform
+data:
+  REDIS_PORT:        "6379"
+  USER_SERVICE_URL:  "http://user-service:8083"
+  EUREKA_SERVER_URL: "http://eureka-service:8761/eureka"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: question-service
+  namespace: exam-platform
+  labels:
+    app: question-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: question-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: question-service
+    spec:
+      serviceAccountName: question-service-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: question-service
+          # Pin to digest in prod: examplatform/question-service@sha256:<digest>
+          image: hetishh/question-service:1.0.0
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8083
+          env:
+            - name: DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: question-service-secrets
+                  key: DB_URL
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: question-service-secrets
+                  key: DB_USERNAME
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: question-service-secrets
+                  key: DB_PASSWORD
+            - name: REDIS_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: question-service-secrets
+                  key: REDIS_HOST
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: question-service-secrets
+                  key: REDIS_PASSWORD
+          envFrom:
+            - configMapRef:
+                name: question-service-config
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          # startupProbe handles slow JVM boot — liveness/readiness kick in after
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8083
+            failureThreshold: 15
+            periodSeconds: 5        # Up to 75s for JVM startup
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8083
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8083
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tmp-dir
+              mountPath: /tmp     # JVM needs a writable /tmp with readOnlyRootFilesystem: true
+      volumes:
+        - name: tmp-dir
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: question-service
+  namespace: exam-platform
+spec:
+  type: ClusterIP       # Internal only — accessed via API Gateway
+  selector:
+    app: question-service
+  ports:
+    - port: 8083
+      targetPort: 8083
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: question-service-netpol
+  namespace: exam-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: question-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api-gateway    # Only Gateway can call Question Service
+      ports:
+        - protocol: TCP
+          port: 8083
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: user-service
+      ports:
+        - protocol: TCP
+          port: 8083
+    - to:
+        - podSelector:
+            matchLabels:
+              app: mysql
+      ports:
+        - protocol: TCP
+          port: 3306
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    - to:
+        - podSelector:
+            matchLabels:
+              app: eureka-service
+      ports:
+        - protocol: TCP
+          port: 8761
+    - to: []                      # Allow DNS resolution
+      ports:
+        - protocol: UDP
+          port: 53
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: question-service-pdb
+  namespace: exam-platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: question-service
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: question-service-sa
+  namespace: exam-platform
+automountServiceAccountToken: false

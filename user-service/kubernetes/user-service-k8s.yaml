@@ -1,0 +1,210 @@
+# Kubernetes manifest — User Service
+# Consistent with auth-service.yaml and question-service-k8s.yaml conventions
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: user-service-secrets
+  namespace: exam-platform
+type: Opaque
+stringData:
+  # Replace ALL values with your secrets manager references (ESO / Sealed Secrets / SOPS)
+  # Do NOT commit real credentials here
+  DB_URL: "jdbc:mysql://mysql:3306/user_db"
+  DB_USERNAME: "root"       # Least-privilege user scoped to user_db only
+  DB_PASSWORD: "root"       # Strong password — openssl rand -base64 16
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: user-service-config
+  namespace: exam-platform
+data:
+  KAFKA_BOOTSTRAP_SERVERS: "kafka-service:9092"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-service
+  namespace: exam-platform
+  labels:
+    app: user-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: user-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: user-service
+    spec:
+      serviceAccountName: user-service-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: user-service
+          # Pin to digest in prod: examplatform/user-service@sha256:<digest>
+          image: hetishh/user-service:1.0.0
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8082
+          env:
+            - name: DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: user-service-secrets
+                  key: DB_URL
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: user-service-secrets
+                  key: DB_USERNAME
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: user-service-secrets
+                  key: DB_PASSWORD
+          envFrom:
+            - configMapRef:
+                name: user-service-config
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          # startupProbe handles slow JVM boot — liveness/readiness kick in after
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8082
+            failureThreshold: 15
+            periodSeconds: 5        # Up to 75s for JVM startup
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8082
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8082
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tmp-dir
+              mountPath: /tmp       # JVM needs writable /tmp with readOnlyRootFilesystem: true
+      volumes:
+        - name: tmp-dir
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-service
+  namespace: exam-platform
+spec:
+  type: ClusterIP                 # Internal only — accessed via API Gateway or other services
+  selector:
+    app: user-service
+  ports:
+    - port: 8082
+      targetPort: 8082
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: user-service-netpol
+  namespace: exam-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: user-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # API Gateway — external traffic entry point
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api-gateway
+      ports:
+        - protocol: TCP
+          port: 8082
+    # Auth Service — calls user-service during token validation
+    - from:
+        - podSelector:
+            matchLabels:
+              app: auth-service
+      ports:
+        - protocol: TCP
+          port: 8082
+    # Question Service — calls user-service for user lookups
+    - from:
+        - podSelector:
+            matchLabels:
+              app: question-service
+      ports:
+        - protocol: TCP
+          port: 8082
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: mysql
+      ports:
+        - protocol: TCP
+          port: 3306
+    - to:
+        - podSelector:
+            matchLabels:
+              app: kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+    - to: []                      # Allow DNS resolution
+      ports:
+        - protocol: UDP
+          port: 53
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: user-service-pdb
+  namespace: exam-platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: user-service
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: user-service-sa
+  namespace: exam-platform
+automountServiceAccountToken: false

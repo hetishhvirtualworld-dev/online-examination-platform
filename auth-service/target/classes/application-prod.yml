@@ -1,0 +1,49 @@
+spring:
+  # MySQL — audit log only
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      minimum-idle: 2
+      maximum-pool-size: 10
+      connection-timeout: 3000
+
+  # Redis — refresh tokens, rate limiting, access token blocklist
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}          
+      password: ${REDIS_PASSWORD}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          min-idle: 2
+          max-idle: 8
+          max-active: 16           
+                                   # ensure Redis maxclients is set above this value
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    producer:
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        spring.json.add.type.headers: false  
+
+# JWT — same secret as API Gateway (they share the same signing key)
+jwt:
+  secret: ${JWT_SECRET}                          # REQUIRED — injected from Kubernetes Secret
+  access-token-expiry-ms: ${JWT_ACCESS_EXPIRY_MS}   # 15 minutes
+  refresh-token-expiry-ms: ${JWT_REFRESH_EXPIRY_MS} # 7 days
+
+# Downstream services
+services:
+  user-service:
+    url: ${USER_SERVICE_URL}
+
+# Auth configuration
+auth:
+  rate-limit:
+    max-attempts: ${RATE_LIMIT_MAX}
+    window-seconds: ${RATE_LIMIT_WINDOW}   # 15-minute window

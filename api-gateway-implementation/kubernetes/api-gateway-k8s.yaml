@@ -8,16 +8,14 @@ data:
   AUTH_SERVICE_URL: "http://auth-service:8080"
   USER_SERVICE_URL: "http://user-service:8080"
   EXAM_SERVICE_URL: "http://exam-service:8080"
-  EVALUATION_SERVICE_URL: "http://evaluation-service:8080"
-  RESULT_SERVICE_URL: "http://result-service:8080"
-  NOTIFICATION_SERVICE_URL: "http://notification-service:8080"
   
   # Redis Configuration
   REDIS_HOST: "redis-service"
   REDIS_PORT: "6379"
   
   # JWT Configuration
-  JWT_ISSUER: "https://examplatform.com"
+  JWT_ACCESS_EXPIRY_MS: "900000"       # 15 minutes
+  JWT_REFRESH_EXPIRY_MS: "604800000"  # 7 days
   
   # Spring Profile
   SPRING_PROFILES_ACTIVE: "prod"
@@ -30,7 +28,8 @@ metadata:
   namespace: exam-platform
 type: Opaque
 stringData:
-  REDIS_PASSWORD: "your-redis-password-here"
+  REDIS_PASSWORD: ""
+  JWT_SECRET: "my-super-secret-key-for-prod-secret-key"
 
 ---
 apiVersion: apps/v1
@@ -60,7 +59,7 @@ spec:
       
       containers:
       - name: api-gateway
-        image: examplatform/api-gateway:1.0.0
+        image: hetishh/api-gateway:1.0.0
         imagePullPolicy: IfNotPresent
         
         ports:
@@ -80,6 +79,11 @@ spec:
             secretKeyRef:
               name: api-gateway-secret
               key: REDIS_PASSWORD
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: api-gateway-secret
+              key: JWT_SECRET
         
         # Resource limits
         resources:

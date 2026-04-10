@@ -1,18 +1,49 @@
-server:
-  port: 8082
-
 spring:
+  # MySQL — user_db
   datasource:
-    url: jdbc:mysql://localhost:3306/user_db
-    username: root
-    password: root
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      minimum-idle: 2
+      maximum-pool-size: 10
+      connection-timeout: 3000
+
   jpa:
     hibernate:
-      ddl-auto: update
-    show-sql: true
+      ddl-auto: validate          # PROD: never use 'update' — use Flyway/Liquibase migrations
+    show-sql: false               # PROD: disable SQL logging (performance + log noise)
+    properties:
+      hibernate:
+        format_sql: false
 
+  # Kafka — consumer config
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    consumer:
+      group-id: user-service-group-prod
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.exam.userservice.events"  # PROD: never trust '*' — scope to your package
+        spring.json.value.default.type: com.exam.userservice.events.UserRegisteredEvent
+
+# Actuator — health probes for Kubernetes liveness/readiness
 management:
   endpoints:
     web:
       exposure:
         include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true             # Exposes /actuator/health/liveness and /readiness
+      show-details: never         # PROD: hide sensitive env/config details
+
+ # Eureka — disabled in prod (Kubernetes handles service discovery)
+eureka:
+  client:
+    enabled: false
+    register-with-eureka: false
+    fetch-registry: false

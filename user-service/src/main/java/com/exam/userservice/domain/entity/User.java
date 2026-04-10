@@ -15,6 +15,9 @@ public class User {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+    
+    @Column(nullable = false, unique = true)
+    private Long externalUserId; // from auth-service
 
     @Column(nullable = false)
     private String fullName;

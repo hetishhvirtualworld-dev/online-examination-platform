@@ -22,7 +22,7 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 WORKDIR /app
 
 # Copy jar from builder stage
-COPY --from=builder /app/target/auth-service-*.jar app.jar
+COPY --from=builder /app/target/question-service-*.jar app.jar
 
 # Change ownership to non-root user
 RUN chown -R appuser:appgroup /app

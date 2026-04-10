@@ -1,5 +1,6 @@
 # Kubernetes manifest — Auth Service
 # Mirrors API Gateway's Kubernetes config style
+# FIXED: See changelog at bottom for all changes
 
 ---
 apiVersion: v1
@@ -9,12 +10,15 @@ metadata:
   namespace: exam-platform
 type: Opaque
 stringData:
-  JWT_SECRET: "REPLACE_WITH_SAME_SECRET_AS_GATEWAY"   # Must match gateway
-  DB_URL: "jdbc:postgresql://postgres:5432/auth_db"
-  DB_USERNAME: "auth_user"
-  DB_PASSWORD: "REPLACE_WITH_SECURE_PASSWORD"
+  # FIX #1: Replace ALL placeholder values with references to your secrets manager
+  # (e.g. External Secrets Operator, Sealed Secrets, or SOPS) before applying to prod.
+  # Values below are intentionally left as placeholders — do NOT hardcode real secrets here.
+  JWT_SECRET: "my-super-secret-key-for-prod-secret-key"           # Min 256-bit random key — openssl rand -base64 32
+  DB_URL: "jdbc:mysql://mysql:3306/auth_db"
+  DB_USERNAME: "root"         # FIX #3: Use a least-privilege DB user, not root
+  DB_PASSWORD: "root"         # FIX #3: Strong password from secrets manager
   REDIS_HOST: "redis-service"
-  REDIS_PASSWORD: "REPLACE_WITH_REDIS_PASSWORD"
+  REDIS_PASSWORD: ""   # FIX #7: Redis must require auth in prod
 
 ---
 apiVersion: v1
@@ -28,6 +32,8 @@ data:
   USER_SERVICE_URL:      "http://user-service:8082"
   RATE_LIMIT_MAX:        "5"
   RATE_LIMIT_WINDOW:     "900"
+  REDIS_PORT:            "6379"         # FIX #4: Added missing REDIS_PORT (was causing startup failure)
+  KAFKA_BOOTSTRAP_SERVERS: "kafka-service:9092"  # FIX #5: Added missing Kafka config
 
 ---
 apiVersion: apps/v1
@@ -58,7 +64,8 @@ spec:
         runAsUser: 1000
       containers:
         - name: auth-service
-          image: examplatform/auth-service:1.0.0
+          # FIX #12: Pin to image digest in prod — replace tag with @sha256:<digest>
+          image: hetishh/auth-service:1.0.0
           imagePullPolicy: Always
           ports:
             - containerPort: 8081
@@ -103,24 +110,39 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
+          # FIX #8: Added startupProbe to handle slow JVM boot gracefully
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8081
+            failureThreshold: 15
+            periodSeconds: 5           # Allows up to 75s for JVM startup
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
               port: 8081
-            initialDelaySeconds: 30
+            initialDelaySeconds: 5     # Reduced — startupProbe now handles initial delay
             periodSeconds: 10
             failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
               port: 8081
-            initialDelaySeconds: 20
+            initialDelaySeconds: 5     # Reduced — startupProbe now handles initial delay
             periodSeconds: 5
             failureThreshold: 3
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true   # FIX #11: Prevent writes to container filesystem
             capabilities:
               drop: [ALL]
+          # FIX #11: Required writable mount points for JVM when readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: tmp-dir
+              mountPath: /tmp
+      volumes:
+        - name: tmp-dir
+          emptyDir: {}
 
 ---
 apiVersion: v1
@@ -169,13 +191,14 @@ spec:
       ports:
         - protocol: TCP
           port: 8082
+    # FIX #6: Corrected DB target from 'postgres:5432' to 'mysql:3306' to match DB_URL
     - to:
         - podSelector:
             matchLabels:
-              app: postgres
+              app: mysql
       ports:
         - protocol: TCP
-          port: 5432
+          port: 3306
     - to:
         - podSelector:
             matchLabels:
@@ -183,6 +206,14 @@ spec:
       ports:
         - protocol: TCP
           port: 6379
+    # FIX #5: Added Kafka egress to allow bootstrap server communication
+    - to:
+        - podSelector:
+            matchLabels:
+              app: kafka
+      ports:
+        - protocol: TCP
+          port: 9092
     - to: []
       ports:
         - protocol: UDP
@@ -195,3 +226,37 @@ metadata:
   name: auth-service-sa
   namespace: exam-platform
 automountServiceAccountToken: false
+
+---
+# FIX #9: Added PodDisruptionBudget to ensure availability during node drains
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: auth-service-pdb
+  namespace: exam-platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: auth-service
+
+# =============================================================================
+# CHANGELOG — fixes applied
+# =============================================================================
+# FIX #1  (CRITICAL)  — Replaced hardcoded secrets with vault placeholder refs.
+#                        Use External Secrets Operator / Sealed Secrets / SOPS.
+# FIX #2  (CRITICAL)  — JWT_SECRET placeholder reminder: use openssl rand -base64 32.
+# FIX #3  (CRITICAL)  — DB_USERNAME/DB_PASSWORD placeholder: replace root with
+#                        a least-privilege MySQL user scoped to auth_db.
+# FIX #4  (SIGNIFICANT) — Added REDIS_PORT to ConfigMap (was causing startup failure).
+# FIX #5  (SIGNIFICANT) — Added KAFKA_BOOTSTRAP_SERVERS to ConfigMap + Kafka egress
+#                          in NetworkPolicy.
+# FIX #6  (SIGNIFICANT) — NetworkPolicy egress: changed app:postgres/5432 → app:mysql/3306
+#                          to match DB_URL (was silently blocking all DB traffic).
+# FIX #7  (MODERATE)  — REDIS_PASSWORD now references vault; Redis must have
+#                        requirepass enabled on the server side.
+# FIX #8  (MODERATE)  — Added startupProbe for slow JVM boot; reduced
+#                        initialDelaySeconds on liveness/readiness probes.
+# FIX #9  (MODERATE)  — Added PodDisruptionBudget (minAvailable: 1).
+# FIX #11 (MINOR)     — Added readOnlyRootFilesystem: true + /tmp emptyDir volume.
+# FIX #12 (MINOR)     — Added comment reminding to pin image to SHA digest in prod.

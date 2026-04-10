@@ -2,6 +2,9 @@ server:
   port: 8082
 
 spring:
+  application:
+    name: user-service
+
   datasource:
     url: jdbc:mysql://localhost:3306/user_db
     username: root
@@ -11,8 +14,24 @@ spring:
       ddl-auto: update
     show-sql: true
 
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: user-service-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+        spring.json.value.default.type: com.exam.userservice.events.UserRegisteredEvent
+
 management:
   endpoints:
     web:
       exposure:
         include: health,info
+
+eureka:
+   client:
+      service-url:
+         defaultZone: http://localhost:8761/eureka

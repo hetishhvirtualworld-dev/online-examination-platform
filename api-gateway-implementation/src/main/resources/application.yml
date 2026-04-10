@@ -43,7 +43,7 @@ spring:
             - Path=/api/auth/register
             - Method=POST
           filters:
-            - StripPrefix=1
+#            - StripPrefix=1
 
         - id: auth-refresh
           uri: ${AUTH_SERVICE_URL:http://localhost:8081}
@@ -55,7 +55,7 @@ spring:
 
         # User Service Routes (Protected - JWT required)
         - id: user-service
-          uri: ${USER_SERVICE_URL:http://localhost:8083}
+          uri: ${USER_SERVICE_URL:http://localhost:8082}
           predicates:
             - Path=/api/users/**
           filters:
@@ -68,7 +68,7 @@ spring:
 
         # Exam Service Routes (Protected - JWT required)
         - id: question-service
-          uri: ${QUESTION_SERVICE_URL:http://localhost:8082}
+          uri: ${QUESTION_SERVICE_URL:http://localhost:8083}
           predicates:
             - Path=/api/questions/**
           filters:

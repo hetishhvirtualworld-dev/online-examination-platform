@@ -8,24 +8,74 @@ spring:
             allowed-origins: 
               - "https://examplatform.com"
               - "https://www.examplatform.com"
+            allowed-methods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - PATCH
+              - OPTIONS
+            allowed-headers: "*"
+            allow-credentials: true
+            max-age: 3600
+      # Route Definitions
+      routes:
+         # Auth Service Routes (Public - No JWT required)
+         - id: auth-login
+           uri: ${AUTH_SERVICE_URL}
+           predicates:
+             - Path=/api/auth/login
+             - Method=POST
 
-# Service URLs (Kubernetes DNS)
-# These resolve to Kubernetes Service objects
-AUTH_SERVICE_URL: http://auth-service:8080
-USER_SERVICE_URL: http://user-service:8080
-EXAM_SERVICE_URL: http://exam-service:8080
-EVALUATION_SERVICE_URL: http://evaluation-service:8080
-RESULT_SERVICE_URL: http://result-service:8080
-NOTIFICATION_SERVICE_URL: http://notification-service:8080
+         - id: auth-register
+           uri: ${AUTH_SERVICE_URL}
+           predicates:
+             - Path=/api/auth/register
+             - Method=POST
+
+         - id: auth-refresh
+           uri: ${AUTH_SERVICE_URL}
+           predicates:
+             - Path=/api/auth/refresh
+             - Method=POST
+
+         # User Service Routes (Protected - JWT required)
+         - id: user-service
+           uri: ${USER_SERVICE_URL}
+           predicates:
+           - Path=/api/users/**
+           filters:
+             - RewritePath=/api/users(?<segment>/.*|$), /api/v1/users$\{segment}
+             - name: RequestRateLimiter
+               args:
+                 redis-rate-limiter.replenishRate: 10
+                 redis-rate-limiter.burstCapacity: 20
+                 redis-rate-limiter.requestedTokens: 1
+
+         # Exam Service Routes (Protected - JWT required)
+         - id: question-service
+           uri: ${QUESTION_SERVICE_URL}
+           predicates:
+             - Path=/api/questions/**
+           filters:
+            - RewritePath=/api/questions(?<segment>/.*|$), /api/v1/questions$\{segment}
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 20
+                redis-rate-limiter.burstCapacity: 40
+                redis-rate-limiter.requestedTokens: 1
 
 # Redis (Kubernetes Service)
 REDIS_HOST: redis-service
-REDIS_PORT: 6379
+REDIS_PORT: ${REDIS_PORT}
 REDIS_PASSWORD: ${REDIS_PASSWORD}
 
 # JWT Configuration (Production)
-JWT_ISSUER: https://examplatform.com
-
+jwt:
+  secret: ${JWT_SECRET}     # REQUIRED — injected from Kubernetes Secret
+  access-token-expiry-ms: ${JWT_ACCESS_EXPIRY_MS}       # 15 minutes
+  refresh-token-expiry-ms: ${JWT_REFRESH_EXPIRY_MS}  # 7 days
+  
 # Logging (Production - Less verbose)
 logging:
   level:
